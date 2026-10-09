@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Resultados RFFM</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f5f7f4;--card:#fff;--tx:#14231a;--mu:#5d6b62;--ac:#0b7a3e;--ac2:#e6f4ec;--bd:#d9e1db;--wa:#b45309;--er:#b91c1c}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1713;--card:#17221c;--tx:#e8f1ea;--mu:#93a499;--ac:#3ecf7a;--ac2:#1d3326;--bd:#26372d;--wa:#f59e0b;--er:#f87171}}
+:root[data-theme="dark"]{--bg:#0f1713;--card:#17221c;--tx:#e8f1ea;--mu:#93a499;--ac:#3ecf7a;--ac2:#1d3326;--bd:#26372d;--wa:#f59e0b;--er:#f87171}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:0 0 2px}h2{font-size:16px;margin:18px 0 8px}
+.mu{color:var(--mu);font-size:13px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin:10px 0}
+select,input,textarea,button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:7px 10px}
+textarea{width:100%;min-height:90px;font-family:ui-monospace,monospace;font-size:13px}
+button{cursor:pointer;background:var(--ac);color:#fff;border:0;font-weight:600}
+button.g{background:var(--ac2);color:var(--ac)}
+.tabs{display:flex;gap:6px;margin:12px 0;flex-wrap:wrap}
+.tabs button{background:var(--ac2);color:var(--ac)}.tabs button.on{background:var(--ac);color:#fff}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:520px}
+th,td{padding:6px 8px;text-align:center;border-bottom:1px solid var(--bd);white-space:nowrap}
+th{font-size:12px;color:var(--mu)}td.t{text-align:left;font-weight:600}
+td.p{font-weight:800;color:var(--ac)}
+.m{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)}
+.m .h{text-align:right;font-weight:600}.m .a{font-weight:600}
+.sc{font-weight:800;font-size:17px;min-width:56px;text-align:center}
+.chip{font-size:11px;border-radius:99px;padding:1px 8px;background:var(--ac2);color:var(--ac);font-weight:700}
+.chip.pr{color:var(--wa);background:transparent;border:1px solid var(--wa)}.chip.dp{color:var(--er);background:transparent;border:1px solid var(--er)}
+.f{grid-column:1/-1;display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap}
+.f input[type=number]{width:60px;text-align:center}
+.ok{color:var(--ac);font-weight:800}.bad{color:var(--er);font-weight:800}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+a{color:var(--ac)}
+</style></head><body><main>
+<h1>⚽ Resultados RFFM</h1>
+<div class="mu">Marcadores introducidos por las familias · clasificación calculada · verificada con la web oficial de la <a href="https://www.rffm.es" target="_blank" rel="noopener">RFFM</a></div>
+<div id="app"></div>
+<p class="mu"><a href="#" onclick="adminLogin();return false">Acceso administrador</a></p>
+</main>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {getFirestore,collection,doc,onSnapshot,addDoc,updateDoc} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {getAuth,signInAnonymously,signInWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+
+// >>> PEGA AQUÍ la configuración de tu proyecto Firebase (ver SETUP.md) <<<
+const firebaseConfig={
+  apiKey:"PEGAR",authDomain:"PEGAR",projectId:"PEGAR",storageBucket:"PEGAR",messagingSenderId:"PEGAR",appId:"PEGAR"
+};
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm=s=>String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+let db=null,user=null,canEdit=false,S={leagues:[],matches:[],reports:[]},cur=null,tab='tabla',prov=true,pending=false,note='';
+let who='';try{who=localStorage.getItem('who')||''}catch(e){}
+
+try{
+  const fb=initializeApp(firebaseConfig),fs=getFirestore(fb),au=getAuth(fb);
+  db={collection:n=>({onSnapshot:(f,e)=>onSnapshot(collection(fs,n),f,e),add:d=>addDoc(collection(fs,n),d)}),doc:p=>({update:d=>updateDoc(doc(fs,p),d)})};
+  window.adminLogin=async()=>{const e=prompt('Email de administrador'),p=e&&prompt('Contraseña');if(!p)return;
+    try{await signInWithEmailAndPassword(au,e,p)}catch(x){alert('No se pudo iniciar sesión')}};
+  window.adminLogout=async()=>{await signOut(au);await signInAnonymously(au)};
+  onAuthStateChanged(au,u=>{if(!u){signInAnonymously(au).catch(x=>{note='Error de acceso: '+x.code;render()});return}
+    const was=canEdit;canEdit=!!u.email;if(!was&&canEdit===false&&tab==='admin')tab='tabla';if(!canEdit&&tab==='admin')tab='tabla';render()});
+  for(const n of['leagues','matches','reports'])db.collection(n).onSnapshot(s=>{S[n]=s.docs.map(d=>({...d.data(),id:d.id}));render()},e=>{note='Error de datos: '+(e.code||e);render()});
+}catch(e){note='Configuración de Firebase incorrecta: '+e.message}
+render();
+document.addEventListener('focusout',()=>setTimeout(()=>{if(pending&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))render()},50));
+
+// Effective result for a match
+function result(m){
+  if(m.official&&m.official.h!=null)return{h:m.official.h,a:m.official.a,st:'oficial',n:0};
+  const rs=S.reports.filter(r=>r.match===m.id);if(!rs.length)return null;
+  const g={};rs.forEach(r=>{const k=r.h+'-'+r.a;(g[k]=g[k]||{h:r.h,a:r.a,n:0,t:0});g[k].n++;g[k].t=Math.max(g[k].t,r.at||0)});
+  const l=Object.values(g).sort((x,y)=>y.n-x.n||y.t-x.t);
+  const top=l[0],dis=l.length>1&&l[1].n===top.n;
+  return{h:top.h,a:top.a,n:top.n,st:dis?'disputa':top.n>=2?'confirmado':'provisional'};
+}
+function standings(lid){
+  const T={};const get=n=>T[norm(n)]=T[norm(n)]||{t:n,pj:0,g:0,e:0,p:0,gf:0,gc:0,pt:0};
+  S.matches.filter(m=>m.league===lid).forEach(m=>{get(m.home);get(m.away);const r=result(m);
+    if(!r||(!prov&&(r.st==='provisional'||r.st==='disputa')))return;
+    const a=get(m.home),b=get(m.away);a.pj++;b.pj++;a.gf+=r.h;a.gc+=r.a;b.gf+=r.a;b.gc+=r.h;
+    if(r.h>r.a){a.g++;b.p++;a.pt+=3}else if(r.h<r.a){b.g++;a.p++;b.pt+=3}else{a.e++;b.e++;a.pt++;b.pt++}});
+  return Object.values(T).sort((x,y)=>y.pt-x.pt||(y.gf-y.gc)-(x.gf-x.gc)||y.gf-x.gf||x.t.localeCompare(y.t));
+}
+const chip=r=>!r?'':r.st==='oficial'?'<span class="chip">oficial</span>':r.st==='confirmado'?`<span class="chip">confirmado ×${r.n}</span>`:r.st==='disputa'?'<span class="chip dp">en disputa</span>':'<span class="chip pr">provisional</span>';
+
+function render(){
+  if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)&&$('#app').contains(document.activeElement)){pending=true;return}
+  pending=false;
+  const ls=S.leagues.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  if(!cur||!ls.find(l=>l.id===cur))cur=ls[0]?.id||null;
+  const L=ls.find(l=>l.id===cur);
+  let h='';
+  if(!db)h+='<div class="card">Conectando con la base de datos… si no carga, revisa la configuración (SETUP.md).</div>';
+  if(note)h+=`<div class="card bad">${esc(note)}</div>`;
+  h+=`<div class="row" style="margin-top:12px"><select id="lg">${ls.map(l=>`<option value="${l.id}" ${l.id===cur?'selected':''}>${esc(l.name)}${l.cat?' · '+esc(l.cat):''}</option>`).join('')||'<option>Sin ligas todavía</option>'}</select>
+  <label class="mu"><input type="checkbox" id="pv" ${prov?'checked':''}> incluir provisionales</label></div>`;
+  h+=`<div class="tabs">${[['tabla','Clasificación'],['partidos','Partidos'],['verif','Verificar RFFM']].concat(canEdit?[['admin','Admin']]:[]).map(([k,v])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${v}</button>`).join('')}</div>`;
+  if(!L&&tab!=='admin')h+='<div class="card mu">Aún no hay ligas. '+(canEdit?'Créalas en Admin.':'El administrador debe crearlas.')+'</div>';
+  else if(tab==='tabla')h+=tabla(L);else if(tab==='partidos')h+=partidos(L);else if(tab==='verif')h+=verif(L);else if(tab==='admin'&&canEdit)h+=admin(L);
+  $('#app').innerHTML=h;bind(L);
+}
+function tabla(L){
+  const rows=standings(L.id);if(!rows.length)return'<div class="card mu">Sin partidos con resultado.</div>';
+  return`<div class="card wrap"><table><tr><th>#</th><th style="text-align:left">Equipo</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>GF</th><th>GC</th><th>DG</th><th>Pts</th></tr>${rows.map((r,i)=>`<tr><td>${i+1}</td><td class="t">${esc(r.t)}</td><td>${r.pj}</td><td>${r.g}</td><td>${r.e}</td><td>${r.p}</td><td>${r.gf}</td><td>${r.gc}</td><td>${r.gf-r.gc}</td><td class="p">${r.pt}</td></tr>`).join('')}</table></div><div class="mu">Desempate simplificado (puntos, diferencia de goles, goles a favor). La clasificación oficial puede aplicar el enfrentamiento directo.</div>`;
+}
+function partidos(L){
+  const ms=S.matches.filter(m=>m.league===L.id);if(!ms.length)return'<div class="card mu">Sin partidos. El administrador puede importarlos.</div>';
+  const by={};ms.forEach(m=>(by[m.round]=by[m.round]||[]).push(m));
+  let h=`<div class="card"><label class="mu">Tu nombre (opcional) <input id="who" value="${esc(who)}" placeholder="Familia de…"></label></div>`;
+  Object.keys(by).sort((a,b)=>a-b).forEach(r=>{h+=`<h2>Jornada ${esc(r)}</h2><div class="card">`+by[r].map(m=>{const x=result(m),off=x&&x.st==='oficial';
+    return`<div class="m"><div class="h">${esc(m.home)}</div><div class="sc">${x?x.h+' - '+x.a:'– : –'}</div><div class="a">${esc(m.away)}</div>
+    <div class="f">${chip(x)}${off?'':`<input type="number" min="0" max="99" inputmode="numeric" id="h_${m.id}" aria-label="Goles local"> - <input type="number" min="0" max="99" inputmode="numeric" id="a_${m.id}" aria-label="Goles visitante"><button data-send="${m.id}">Enviar resultado</button>`}${canEdit?`<button class="g" data-off="${m.id}">Fijar oficial</button>`:''}</div></div>`}).join('')+'</div>'});
+  return h;
+}
+function parseOff(t){return(t||'').split('\n').map(l=>l.split(/[;\t,]/).map(s=>s.trim())).filter(c=>c.length>=3&&/^\d+$/.test(c[c.length-1]))
+  .map(c=>({t:c[0],pj:c.length>=3?+c[1]:null,pt:+c[c.length-1]}))}
+function verif(L){
+  const off=parseOff(L.official),mine=standings(L.id);
+  let h=`<div class="card">Compara nuestra clasificación con la web oficial. <a href="https://www.rffm.es" target="_blank" rel="noopener">Abrir rffm.es</a> → tu competición → Clasificación, y ${canEdit?'pega abajo una línea por equipo (<b>Equipo;PJ;Pts</b>) en Admin':'pide al administrador que pegue la clasificación oficial'}.</div>`;
+  if(!off.length)return h+'<div class="card mu">Todavía no se ha cargado la clasificación oficial de esta liga.</div>';
+  const M=Object.fromEntries(mine.map(r=>[norm(r.t),r])),seen=new Set();let bad=0;
+  const rows=off.map(o=>{const r=M[norm(o.t)];seen.add(norm(o.t));const ok=r&&r.pt===o.pt&&r.pj===o.pj;if(!ok)bad++;
+    return`<tr><td class="t">${esc(o.t)}</td><td>${o.pj}</td><td>${o.pt}</td><td>${r?r.pj:'—'}</td><td>${r?r.pt:'—'}</td><td class="${ok?'ok':'bad'}">${ok?'✓':'✗'}</td></tr>`});
+  mine.forEach(r=>{if(!seen.has(norm(r.t))){bad++;rows.push(`<tr><td class="t">${esc(r.t)}</td><td>—</td><td>—</td><td>${r.pj}</td><td>${r.pt}</td><td class="bad">✗</td></tr>`)}});
+  return h+`<div class="card ${bad?'bad':'ok'}">${bad?bad+' diferencia(s): revisa los partidos provisionales o en disputa.':'✓ Coincide con la clasificación oficial.'}</div><div class="card wrap"><table><tr><th style="text-align:left">Equipo</th><th>PJ RFFM</th><th>Pts RFFM</th><th>PJ app</th><th>Pts app</th><th></th></tr>${rows.join('')}</table></div>`;
+}
+function admin(L){
+  return`<div class="card"><b>Nueva liga</b><div class="row" style="margin-top:6px"><input id="ln" placeholder="Nombre (p. ej. Alevín 1ª Año 2)"><input id="lc" placeholder="Categoría / grupo"><button id="addL">Crear</button></div></div>
+  ${L?`<div class="card"><b>Importar partidos de «${esc(L.name)}»</b><div class="mu">Copia desde la web de la RFFM, una línea por partido: <code>jornada;local;visitante;golesL;golesV</code> (los goles son opcionales; si los pones se marcan como oficiales).</div><textarea id="imp" placeholder="1;CD Boadilla;Rayo Majadahonda;2;1"></textarea><button id="doImp">Importar</button></div>
+  <div class="card"><b>Clasificación oficial RFFM</b><div class="mu">Una línea por equipo: <code>Equipo;PJ;Pts</code></div><textarea id="offt">${esc(L.official||'')}</textarea><button id="saveOff">Guardar</button></div>`:''}
+  <div class="mu">Las familias envían resultados desde el enlace público de esta página, sin cuenta. <a href="#" onclick="adminLogout();return false">Cerrar sesión de administrador</a></div>`;
+}
+function bind(L){
+  const q=(s,f)=>{const e=$(s);if(e)e.onclick=f};
+  $('#lg')&&($('#lg').onchange=e=>{cur=e.target.value;render()});
+  $('#pv')&&($('#pv').onchange=e=>{prov=e.target.checked;render()});
+  $('#who')&&($('#who').onchange=e=>{who=e.target.value;try{localStorage.setItem('who',who)}catch(x){}});
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()});
+  document.querySelectorAll('[data-send]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.send,h=$('#h_'+id).value,a=$('#a_'+id).value;
+    if(h===''||a===''||+h<0||+a<0){alert('Introduce los dos marcadores.');return}
+    try{await db.collection('reports').add({match:id,h:+h,a:+a,by:who||'Anónimo',at:Date.now()});note=''}catch(e){note='No se pudo enviar ('+(e.code||'error')+'). Inténtalo de nuevo.';render()}});
+  document.querySelectorAll('[data-off]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.off,h=$('#h_'+id)?.value,a=$('#a_'+id)?.value;if(!h||!a){alert('Introduce el marcador oficial en las casillas.');return}
+    await db.doc('matches/'+id).update({official:{h:+h,a:+a}})});
+  q('#addL',async()=>{const n=$('#ln').value.trim();if(!n)return;const r=await db.collection('leagues').add({name:n,cat:$('#lc').value.trim()});cur=r.id;render()});
+  q('#saveOff',async()=>{await db.doc('leagues/'+L.id).update({official:$('#offt').value});note='';render()});
+  q('#doImp',async()=>{
+    const lines=$('#imp').value.split('\n').map(l=>l.split(/[;\t]/).map(s=>s.trim())).filter(c=>c.length>=3&&c[1]&&c[2]);let n=0;
+    for(const c of lines){const off=c[3]!==undefined&&c[3]!==''&&c[4]!==undefined&&c[4]!==''?{h:+c[3],a:+c[4]}:null;
+      const ex=S.matches.find(m=>m.league===L.id&&String(m.round)===c[0]&&norm(m.home)===norm(c[1])&&norm(m.away)===norm(c[2]));
+      if(ex){if(off)await db.doc('matches/'+ex.id).update({official:off})}
+      else{await db.collection('matches').add({league:L.id,round:c[0],home:c[1],away:c[2],official:off});n++}}
+    alert(n+' partidos nuevos importados.');$('#imp').value=''});
+}
+</script></body></html>
