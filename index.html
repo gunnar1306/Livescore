@@ -42,7 +42,7 @@ a{color:var(--ac)}
 </main>
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import {getFirestore,collection,doc,onSnapshot,addDoc,updateDoc} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {getFirestore,collection,doc,onSnapshot,addDoc,updateDoc,writeBatch} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {getAuth,signInAnonymously,signInWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
 // >>> PEGA AQUÍ la configuración de tu proyecto Firebase (ver SETUP.md) <<<
@@ -58,7 +58,8 @@ let who='';try{who=localStorage.getItem('who')||''}catch(e){}
 
 try{
   const fb=initializeApp(firebaseConfig),fs=getFirestore(fb),au=getAuth(fb);
-  db={collection:n=>({onSnapshot:(f,e)=>onSnapshot(collection(fs,n),f,e),add:d=>addDoc(collection(fs,n),d)}),doc:p=>({update:d=>updateDoc(doc(fs,p),d)})};
+  db={collection:n=>({onSnapshot:(f,e)=>onSnapshot(collection(fs,n),f,e),add:d=>addDoc(collection(fs,n),d)}),doc:p=>({update:d=>updateDoc(doc(fs,p),d)}),
+    removeAll:async ps=>{for(let i=0;i<ps.length;i+=400){const b=writeBatch(fs);ps.slice(i,i+400).forEach(x=>b.delete(doc(fs,x)));await b.commit()}}};
   window.adminLogin=async()=>{const e=prompt('Email de administrador'),p=e&&prompt('Contraseña');if(!p)return;
     try{await signInWithEmailAndPassword(au,e,p)}catch(x){alert('No se pudo iniciar sesión')}};
   window.adminLogout=async()=>{await signOut(au);await signInAnonymously(au)};
@@ -133,6 +134,7 @@ function admin(L){
   return`<div class="card"><b>Nueva liga</b><div class="row" style="margin-top:6px"><input id="ln" placeholder="Nombre (p. ej. Alevín 1ª Año 2)"><input id="lc" placeholder="Categoría / grupo"><button id="addL">Crear</button></div></div>
   ${L?`<div class="card"><b>Importar partidos de «${esc(L.name)}»</b><div class="mu">Copia desde la web de la RFFM, una línea por partido: <code>jornada;local;visitante;golesL;golesV</code> (los goles son opcionales; si los pones se marcan como oficiales).</div><textarea id="imp" placeholder="1;CD Boadilla;Rayo Majadahonda;2;1"></textarea><button id="doImp">Importar</button></div>
   <div class="card"><b>Clasificación oficial RFFM</b><div class="mu">Una línea por equipo: <code>Equipo;PJ;Pts</code></div><textarea id="offt">${esc(L.official||'')}</textarea><button id="saveOff">Guardar</button></div>`:''}
+  ${L?`<div class="card"><b>Eliminar liga</b><div class="mu">Borra «${esc(L.name)}» con todos sus partidos y avisos de resultado. No se puede deshacer.</div><button id="delL" style="background:var(--er)">Eliminar liga…</button></div>`:''}
   <div class="mu">Las familias envían resultados desde el enlace público de esta página, sin cuenta. <a href="#" onclick="adminLogout();return false">Cerrar sesión de administrador</a></div>`;
 }
 function bind(L){
@@ -149,6 +151,11 @@ function bind(L){
     const id=b.dataset.off,h=$('#h_'+id)?.value,a=$('#a_'+id)?.value;if(!h||!a){alert('Introduce el marcador oficial en las casillas.');return}
     await db.doc('matches/'+id).update({official:{h:+h,a:+a}})});
   q('#addL',async()=>{const n=$('#ln').value.trim();if(!n)return;const r=await db.collection('leagues').add({name:n,cat:$('#lc').value.trim()});cur=r.id;render()});
+  q('#delL',async()=>{
+    const ms=S.matches.filter(m=>m.league===L.id),ids=new Set(ms.map(m=>m.id)),rp=S.reports.filter(r=>ids.has(r.match));
+    if(!confirm('¿Eliminar «'+L.name+'», '+ms.length+' partidos y '+rp.length+' avisos de resultado? No se puede deshacer.'))return;
+    try{await db.removeAll([...rp.map(r=>'reports/'+r.id),...ms.map(m=>'matches/'+m.id),'leagues/'+L.id]);cur=null;note='';tab='tabla';render()}
+    catch(e){note='No se pudo eliminar ('+(e.code||'error')+').';render()}});
   q('#saveOff',async()=>{await db.doc('leagues/'+L.id).update({official:$('#offt').value});note='';render()});
   q('#doImp',async()=>{
     const lines=$('#imp').value.split('\n').map(l=>l.split(/[;\t]/).map(s=>s.trim())).filter(c=>c.length>=3&&c[1]&&c[2]);let n=0;
